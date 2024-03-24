@@ -79,3 +79,63 @@ async def signin(request: Request,
         return HTMLResponse(content=html_content)
     else:
         raise HTTPException(status_code=400, detail="Invalid credentials")
+    
+
+
+@router.post("/signup", response_model=SigninResponse)
+async def signup(request: Request, form_data: SignupForm):
+    if not request.app.state.ENABLE_SIGNUP:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
+        )
+
+    if not validate_email_format(form_data.email.lower()):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT
+        )
+
+    if Users.get_user_by_email(form_data.email.lower()):
+        raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
+
+    try:
+        role = (
+            "admin"
+            if Users.get_num_users() == 0
+            else request.app.state.DEFAULT_USER_ROLE
+        )
+        hashed = get_password_hash(form_data.password)
+        user = Auths.insert_new_auth(
+            form_data.email.lower(), hashed, form_data.name, role
+        )
+
+        if user:
+            token = create_token(
+                data={"id": user.id},
+                expires_delta=parse_duration(request.app.state.JWT_EXPIRES_IN),
+            )
+            # response.set_cookie(key='token', value=token, httponly=True)
+
+            if request.app.state.WEBHOOK_URL:
+                post_webhook(
+                    request.app.state.WEBHOOK_URL,
+                    WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
+                    {
+                        "action": "signup",
+                        "message": WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
+                        "user": user.model_dump_json(exclude_none=True),
+                    },
+                )
+
+            return {
+                "token": token,
+                "token_type": "Bearer",
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "profile_image_url": user.profile_image_url,
+            }
+        else:
+            raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
+    except Exception as err:
+        raise HTTPException(500, detail=ERROR_MESSAGES.DEFAULT(err))

@@ -10,6 +10,7 @@ from apps.web.routers import (
     prompts,
     configs,
     utils,
+    ltibridge
 )
 from config import (
     WEBUI_VERSION,
@@ -53,6 +54,7 @@ app.include_router(prompts.router, prefix="/prompts", tags=["prompts"])
 
 app.include_router(configs.router, prefix="/configs", tags=["configs"])
 app.include_router(utils.router, prefix="/utils", tags=["utils"])
+app.include_router(ltibridge.router, prefix="/ltibridge", tags=["ltibridge"])
 
 
 @app.get("/")
