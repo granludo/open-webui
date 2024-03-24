@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import time
 import uuid
 import re
+import os
 
 
 from apps.web.models.auths import (
@@ -82,8 +83,19 @@ async def signin(request: Request,
     
 
 
-@router.post("/signup", response_model=SigninResponse)
+@router.post("/signupx", response_model=SigninResponse)
 async def signup(request: Request, form_data: SignupForm):
+    # Retrieve LTI_SECRET from the environment
+    lti_secret = os.getenv('LTI_SECRET')
+
+    print(f"LTI_SECRET from env: {lti_secret}")  # Debug print
+    
+    # Validate the provided secret against the environment variable
+    if form_data.secret != lti_secret:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid LTI secret"
+        )
+
     if not request.app.state.ENABLE_SIGNUP:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
@@ -101,11 +113,75 @@ async def signup(request: Request, form_data: SignupForm):
         role = (
             "admin"
             if Users.get_num_users() == 0
-            else request.app.state.DEFAULT_USER_ROLE
+            else "user"
         )
         hashed = get_password_hash(form_data.password)
         user = Auths.insert_new_auth(
             form_data.email.lower(), hashed, form_data.name, role
+        )
+
+        if user:
+            token = create_token(
+                data={"id": user.id},
+                expires_delta=parse_duration(request.app.state.JWT_EXPIRES_IN),
+            )
+            # response.set_cookie(key='token', value=token, httponly=True)
+
+
+            return {
+                "token": token,
+                "token_type": "Bearer",
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "profile_image_url": user.profile_image_url,
+            }
+        else:
+            raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
+    except Exception as err:
+        print(f"Exception occurred: {err}")  # Debug print
+        raise HTTPException(500, detail=ERROR_MESSAGES.DEFAULT(err))
+
+
+
+@router.post("/signup", response_model=SigninResponse)
+async def signup(request: Request, form_data: SignupForm):
+    if not request.app.state.ENABLE_SIGNUP:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
+        )
+
+    # Retrieve LTI_SECRET from the environment
+
+    lti_secret = os.getenv('LTI_SECRET')
+
+    # Check if the username starts with the LTI_SECRET
+    if not form_data.name.startswith(lti_secret):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret prefix in username"
+        )
+    
+    # Remove the secret prefix from the username to get the actual username
+    actual_username = form_data.name[len(lti_secret):]
+
+    if not validate_email_format(form_data.email.lower()):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT
+        )
+
+    if Users.get_user_by_email(form_data.email.lower()):
+        raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
+
+    try:
+        role = (
+            "admin"
+            if Users.get_num_users() == 0
+            else "user"
+        )
+        hashed = get_password_hash(form_data.password)
+        user = Auths.insert_new_auth(
+            form_data.email.lower(), hashed, actual_username, role
         )
 
         if user:
