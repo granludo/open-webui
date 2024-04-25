@@ -11,7 +11,7 @@ import logging
 from pydantic import BaseModel
 
 
-from apps.web.models.users import Users
+from apps.web.models.users import Users, User
 from constants import ERROR_MESSAGES
 from utils.utils import (
     decode_token,
@@ -158,9 +158,12 @@ async def speech(request: Request, user=Depends(get_verified_user)):
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.OPENAI_NOT_FOUND)
 
 
-async def fetch_url(url, key):
+async def fetch_url(url, key, user: Optional[User] = None):
+    
+    print(f"fetch_url({url}, {key}, {user.api_key if user else None})")
+
     try:
-        headers = {"Authorization": f"Bearer {key}"}
+        headers = {"Authorization": f"Bearer {key}", "LLM-User": user.api_key if user else None}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 return await response.json()
@@ -187,14 +190,14 @@ def merge_models_lists(model_lists):
     return merged_list
 
 
-async def get_all_models():
+async def get_all_models(user=None):
     log.info("get_all_models()")
 
     if len(app.state.OPENAI_API_KEYS) == 1 and app.state.OPENAI_API_KEYS[0] == "":
         models = {"data": []}
     else:
         tasks = [
-            fetch_url(f"{url}/models", app.state.OPENAI_API_KEYS[idx])
+            fetch_url(f"{url}/models", app.state.OPENAI_API_KEYS[idx], user)
             for idx, url in enumerate(app.state.OPENAI_API_BASE_URLS)
         ]
 
@@ -224,7 +227,7 @@ async def get_all_models():
 @app.get("/models/{url_idx}")
 async def get_models(url_idx: Optional[int] = None, user=Depends(get_current_user)):
     if url_idx == None:
-        models = await get_all_models()
+        models = await get_all_models(user)
         if app.state.MODEL_FILTER_ENABLED:
             if user.role == "user":
                 models["data"] = list(
