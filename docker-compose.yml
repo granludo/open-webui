@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    environment:
+      OPENAI_API_BASE_URL: "http://mockai:5002/v1"
+      OPENAI_API_KEY: "xxxx"
+    ports:
+      - "8080:8080" # Assuming the Web UI runs on port 80, adjust if needed
+    volumes:
+      - ./backend:/app/backend
+    restart: always
