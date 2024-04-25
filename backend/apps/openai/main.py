@@ -160,10 +160,15 @@ async def speech(request: Request, user=Depends(get_verified_user)):
 
 async def fetch_url(url, key, user: Optional[User] = None):
     
-    print(f"fetch_url({url}, {key}, {user.api_key if user else None})")
-
+    # check if user is not None and then print the user.api_key if user has an api_key
+    if user is not None and user.api_key is not None:
+        log.info(f"fetch_url() - user.api_key: {user.api_key}")
+    else:
+        log.info(f"fetch_url() - user is None")
+        
+    
     try:
-        headers = {"Authorization": f"Bearer {key}", "LLM-User": user.api_key if user else None}
+        headers = {"Authorization": f"Bearer {key}", "LLM-User": user.api_key if user is not None and user.api_key is not None else "None"}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 return await response.json()
