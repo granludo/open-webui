@@ -2,7 +2,7 @@ from fastapi import Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi import Depends, FastAPI, HTTPException, status
 from datetime import datetime, timedelta
-from typing import List, Union
+from typing import List, Union, Optional
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel
@@ -11,6 +11,14 @@ import uuid
 import re
 import os
 
+
+# Class Basemodel changes SingupForm to add_api_key for SingupX 
+class SignupFormX(BaseModel):
+    name: str
+    email: str
+    password: str
+    api_key: str
+    profile_image_url: Optional[str] = "/user.png"
 
 from apps.web.models.auths import (
     SigninForm,
@@ -66,7 +74,7 @@ async def signin(request: Request,
             localStorage.setItem('name', '{user.name}');
             localStorage.setItem('role', '{user.role}');
             localStorage.setItem('profile_image_url', '{user.profile_image_url}');
-
+// AÑADIR MODELS !!! 
             // Optionally, redirect after setting localStorage
             window.location.href = '/auth'; // Adjust as necessary
         }};
@@ -84,18 +92,21 @@ async def signin(request: Request,
 
 
 @router.post("/signupx", response_model=SigninResponse)
-async def signup(request: Request, form_data: SignupForm):
+async def signup(request: Request, form_data: SignupFormX):
     # Retrieve LTI_SECRET from the environment
     lti_secret = os.getenv('LTI_SECRET')
 
     print(f"LTI_SECRET from env: {lti_secret}")  # Debug print
-    
-    # Validate the provided secret against the environment variable
-    if form_data.secret != lti_secret:
+     
+     # Check if the username starts with the LTI_SECRET
+    if not form_data.name.startswith(lti_secret):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid LTI secret"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret prefix in username"
         )
-
+    
+    # Remove the secret prefix from the username to get the actual username
+    actual_username = form_data.name[len(lti_secret):]
+  
     if not request.app.state.ENABLE_SIGNUP:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
@@ -117,7 +128,7 @@ async def signup(request: Request, form_data: SignupForm):
         )
         hashed = get_password_hash(form_data.password)
         user = Auths.insert_new_auth(
-            form_data.email.lower(), hashed, form_data.name, role
+            form_data.email.lower(), hashed, actual_username, role
         )
 
         if user:
@@ -125,9 +136,12 @@ async def signup(request: Request, form_data: SignupForm):
                 data={"id": user.id},
                 expires_delta=parse_duration(request.app.state.JWT_EXPIRES_IN),
             )
+            Users.update_user_role_by_id(user.id, "user") 
+            Users.update_user_api_key_by_id(user.id, form_data.api_key)
             # response.set_cookie(key='token', value=token, httponly=True)
 
-
+            
+            
             return {
                 "token": token,
                 "token_type": "Bearer",
@@ -183,6 +197,7 @@ async def signup(request: Request, form_data: SignupForm):
         user = Auths.insert_new_auth(
             form_data.email.lower(), hashed, actual_username, role
         )
+        # // añadir api key de mockai 
 
         if user:
             token = create_token(
