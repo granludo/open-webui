@@ -2,7 +2,7 @@ from fastapi import Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi import Depends, FastAPI, HTTPException, status
 from datetime import datetime, timedelta
-from typing import List, Union, Optional
+from typing import List, Union, Optional 
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel
@@ -118,7 +118,7 @@ async def signup(request: Request, form_data: SignupFormX):
         )
 
     if Users.get_user_by_email(form_data.email.lower()):
-        raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
+        raise HTTPException(450, detail="User already exists")
 
     try:
         role = (
